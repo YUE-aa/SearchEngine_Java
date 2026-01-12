@@ -33,14 +33,14 @@ public class DesktopSearchEngine extends JFrame {
         SwingUtilities.invokeLater(() -> new DesktopSearchEngine().setVisible(true));
     }
 
-    // ========== 核心修改1：扫描电脑桌面 替代 原doc文件夹 ==========
+    // ========== 扫描电脑桌面 ==========
     private static void initLuceneIndex() {
         // 索引已创建则直接返回，不重复扫描，大幅提速
         if(isIndexCreated){
             return;
         }
         try {
-            // 获取电脑桌面的绝对路径，所有Windows电脑通用，无需修改
+            // 获取电脑桌面的绝对路径，所有Windows电脑通用
             String desktopPath = System.getProperty("user.home") + File.separator + "Desktop";
             File docDir = new File(desktopPath);
 
@@ -104,7 +104,7 @@ public class DesktopSearchEngine extends JFrame {
         searchPanel.add(searchTextField, BorderLayout.CENTER);
         searchPanel.add(searchBtn, BorderLayout.EAST);
 
-        // 结果展示区 - 彻底无乱码配置
+        // 结果展示区
         resultTextArea.setFont(new Font("微软雅黑", Font.PLAIN, 14));
         resultTextArea.setEditable(false);
         resultTextArea.setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -117,7 +117,6 @@ public class DesktopSearchEngine extends JFrame {
         add(searchPanel, BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
 
-        // ========== 修改提示文本：去掉doc文件夹说明，适配桌面检索 ==========
         resultTextArea.setText("搜索引擎已就绪\n\n" +
                 "输入关键词后点击【搜索】按钮即可查询\n" +
                 "支持文件类型：txt/csv/log/ini/pdf/docx/xlsx/xls/doc/md\n" +
@@ -127,7 +126,7 @@ public class DesktopSearchEngine extends JFrame {
     private class SearchListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
-            // ========== 核心修改2：每次搜索自动检查索引，新增文档无需重启 ==========
+            // ========== 每次搜索自动检查索引，新增文档无需重启 ==========
             initLuceneIndex();
 
             String keyword = searchTextField.getText().trim();
@@ -160,7 +159,11 @@ public class DesktopSearchEngine extends JFrame {
                     }
                 }
                 resultTextArea.setText(sb.toString());
-                highlightKeyword(keyword); // 关键词黄色高亮
+                // ========== 延迟100毫秒高亮 解决Swing文本加载渲染延迟 ==========
+                new Timer(100, ae -> {
+                    highlightKeyword(keyword);
+                    ((Timer)ae.getSource()).stop();
+                }).start();
 
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(null, "搜索失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
@@ -169,7 +172,7 @@ public class DesktopSearchEngine extends JFrame {
         }
     }
 
-    // 关键词高亮核心方法 - 无修改，保留你喜欢的黄色背景高亮
+    // 关键词高亮核心方法
     private void highlightKeyword(String keyword) {
         if (keyword == null || keyword.isEmpty() || resultTextArea.getText().isEmpty()) {
             return;
@@ -186,13 +189,10 @@ public class DesktopSearchEngine extends JFrame {
         }
     }
 
-    // ========== 核心优化：摘要生成方法，防卡顿+无乱码+格式整洁 ==========
     private String getSummary(String content, String keyword) {
         if (content == null || content.isEmpty()) return "无文档内容";
-        // 超大文档只取前10000字，避免卡顿，完全够用
-        if(content.length() > 10000){
-            content = content.substring(0, 10000);
-        }
+
+
         // 清除换行符、多余空格，解决乱码和排版混乱问题
         String cleanContent = content.replaceAll("\\r\\n|\\r|\\n", " ").replaceAll("\\s+", " ");
         // 清除Excel/Word的特殊分隔符，摘要更整洁
