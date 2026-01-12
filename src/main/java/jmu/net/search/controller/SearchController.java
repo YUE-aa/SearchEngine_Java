@@ -1,78 +1,44 @@
 package jmu.net.search.controller;
 
-import jmu.net.search.constant.FileConstant;
-import jmu.net.search.service.LuceneSearchService;
+import jmu.net.search.dto.SearchResultDTO;
+import jmu.net.search.util.LogUtils;
+import jmu.net.search.util.LuceneUtil;
+import jmu.net.search.vo.ResultVo;
 import org.apache.lucene.document.Document;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @RestController
 public class SearchController {
-    @Autowired
-    private LuceneSearchService searchService;
 
-    // 关键修复：必须加 @RequestParam("keyword") 显式指定参数名
     @GetMapping("/api/search")
-    public ResultVo search(@RequestParam("keyword") String keyword) {
+    public ResultVo search(@RequestParam("keyword") String keyword, HttpServletRequest request) {
+        String clientIp = LogUtils.getClientIp(request);
+        String trimKeyword = keyword.trim();
+
         try {
-            List<Document> documents = searchService.search(keyword);
+            // 执行检索逻辑
+            List<Document> documents = LuceneUtil.search(trimKeyword);
             List<SearchResultDTO> resultList = documents.stream().map(doc -> {
-                String fileName = doc.get(FileConstant.FIELD_NAME);
-                String summary = searchService.getSummary(doc.get(FileConstant.FIELD_CONTENT), keyword);
-                return new SearchResultDTO(fileName, summary);
+                String fileName = doc.get("fileName");
+                String content = doc.get("content");
+                return new SearchResultDTO(fileName, content);
             }).collect(Collectors.toList());
-            return ResultVo.success("搜索成功", resultList);
+
+            // ✅ 核心优化：合并成1条日志，记录完整信息
+            String logContent = "检索关键词：" + trimKeyword + " | 匹配文档数：" + resultList.size();
+            LogUtils.writeLog(clientIp, "检索文件", logContent);
+
+            return ResultVo.success("检索成功", resultList);
         } catch (Exception e) {
-            return ResultVo.error("搜索失败：" + e.getMessage());
+            // 异常日志也保留，方便排查问题
+            String errorLog = "检索关键词：" + trimKeyword + " | 异常原因：" + e.getMessage();
+            LogUtils.writeLog(clientIp, "异常信息", errorLog);
+            return ResultVo.error("检索失败：" + e.getMessage());
         }
-    }
-
-    static class SearchResultDTO {
-        private String fileName;
-        private String summary;
-
-        public SearchResultDTO(String fileName, String summary) {
-            this.fileName = fileName;
-            this.summary = summary;
-        }
-
-        public String getFileName() { return fileName; }
-        public void setFileName(String fileName) { this.fileName = fileName; }
-        public String getSummary() { return summary; }
-        public void setSummary(String summary) { this.summary = summary; }
-    }
-
-    static class ResultVo {
-        private int code;
-        private String msg;
-        private Object data;
-
-        public static ResultVo success(String msg, Object data) {
-            ResultVo vo = new ResultVo();
-            vo.code = 200;
-            vo.msg = msg;
-            vo.data = data;
-            return vo;
-        }
-
-        public static ResultVo error(String msg) {
-            ResultVo vo = new ResultVo();
-            vo.code = 500;
-            vo.msg = msg;
-            vo.data = null;
-            return vo;
-        }
-
-        public int getCode() { return code; }
-        public void setCode(int code) { this.code = code; }
-        public String getMsg() { return msg; }
-        public void setMsg(String msg) { this.msg = msg; }
-        public Object getData() { return data; }
-        public void setData(Object data) { this.data = data; }
     }
 }
