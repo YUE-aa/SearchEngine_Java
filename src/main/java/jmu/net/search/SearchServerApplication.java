@@ -1,12 +1,23 @@
 package jmu.net.search;
 
+import jmu.net.search.service.FileManageService;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import jakarta.annotation.Resource;
+import org.springframework.boot.CommandLineRunner;
 
 @SpringBootApplication
-public class SearchServerApplication { // 类名和文件名一致
+public class SearchServerApplication implements CommandLineRunner {
+    @Resource
+    private FileManageService fileManageService;
+
     public static void main(String[] args) {
         SpringApplication.run(SearchServerApplication.class, args);
-        System.out.println("✅ 服务启动成功！端口：8080 | 文档目录： ./docs");
+    }
+
+    // 项目启动时执行索引初始化
+    @Override
+    public void run(String... args) throws Exception {
+        fileManageService.initDocIndex();
     }
 }

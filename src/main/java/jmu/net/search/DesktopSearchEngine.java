@@ -30,8 +30,11 @@ public class DesktopSearchEngine extends JFrame {
     private JLabel serverStatusLabel;
     private boolean isServerOnline = false;
     private Timer statusCheckTimer;
-    // 配置文件路径，保存在客户端运行目录下
     private final String CONFIG_FILE = "server_config.properties";
+
+    private JCheckBox aiSearchCheckBox;
+    private JCheckBox ragAnswerCheckBox;
+    private JTextPane ragTextPane;
 
     public static void main(String[] args) {
         EventQueue.invokeLater(new Runnable() {
@@ -39,77 +42,88 @@ public class DesktopSearchEngine extends JFrame {
                 try {
                     DesktopSearchEngine frame = new DesktopSearchEngine();
                     frame.setVisible(true);
-                    frame.setTitle("文档搜索引擎-客户端");
+                    frame.setTitle("文档搜索引擎-客户端(AI语义增强版)");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
             }
         });
     }
-    // 主界面初始化核心代码
+
     public DesktopSearchEngine() {
-        // 启动时加载服务器地址配置
         loadServerConfig();
-        // 初始化定时检测任务
         initStatusCheckTimer();
 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setBounds(100, 100, 1300, 700);
-        setLocationRelativeTo(null);// 居中显示
-        // 主面板布局
+        setBounds(100, 100, 1300, 900);
+        setLocationRelativeTo(null);
         contentPane = new JPanel();
         contentPane.setBorder(new EmptyBorder(5, 5, 5, 5));
         contentPane.setLayout(new BorderLayout(0, 5));
         setContentPane(contentPane);
-        // 北部搜索面板
+
         JPanel searchPanel = new JPanel();
-        FlowLayout flowLayout = (FlowLayout) searchPanel.getLayout();
-        flowLayout.setAlignment(FlowLayout.LEFT);
+        searchPanel.setLayout(new BoxLayout(searchPanel, BoxLayout.Y_AXIS));
         contentPane.add(searchPanel, BorderLayout.NORTH);
-        // 服务器状态红绿灯
+
+        JPanel row1 = new JPanel(new FlowLayout(FlowLayout.LEFT));
         serverStatusLabel = new JLabel();
         serverStatusLabel.setPreferredSize(new Dimension(20, 20));
         updateServerStatusUI();
-        searchPanel.add(serverStatusLabel);
+        row1.add(serverStatusLabel);
 
         JLabel statusTextLabel = new JLabel("服务器状态：");
         statusTextLabel.setFont(new Font("微软雅黑", Font.PLAIN, 16));
-        searchPanel.add(statusTextLabel);
+        row1.add(statusTextLabel);
 
         JLabel lblNewLabel = new JLabel("请输入搜索关键词：");
         lblNewLabel.setFont(new Font("微软雅黑", Font.PLAIN, 16));
-        searchPanel.add(lblNewLabel);
-        // 搜索框、按钮等组件初始化
+        row1.add(lblNewLabel);
+
         searchTextField = new JTextField();
         searchTextField.setFont(new Font("微软雅黑", Font.PLAIN, 16));
         searchTextField.setColumns(30);
-        searchPanel.add(searchTextField);
+        row1.add(searchTextField);
 
         JButton searchBtn = new JButton("搜索");
         searchBtn.setFont(new Font("微软雅黑", Font.PLAIN, 16));
-        searchPanel.add(searchBtn);
+        row1.add(searchBtn);
 
-        // ======================== 搜索框回车触发搜索 ========================
-        searchTextField.addActionListener(e -> searchBtn.doClick());
+        aiSearchCheckBox = new JCheckBox("AI语义搜索", false);
+        aiSearchCheckBox.setFont(new Font("微软雅黑", Font.PLAIN, 14));
+        row1.add(aiSearchCheckBox);
 
+        ragAnswerCheckBox = new JCheckBox("生成AI总结", false);
+        ragAnswerCheckBox.setFont(new Font("微软雅黑", Font.PLAIN, 14));
+        ragAnswerCheckBox.setEnabled(false);
+        aiSearchCheckBox.addActionListener(e -> {
+            ragAnswerCheckBox.setEnabled(aiSearchCheckBox.isSelected());
+            if (!aiSearchCheckBox.isSelected()) {
+                ragAnswerCheckBox.setSelected(false);
+            }
+        });
+        row1.add(ragAnswerCheckBox);
+        searchPanel.add(row1);
+
+        JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT));
         JButton downloadBtn = new JButton("下载选中文件");
         downloadBtn.setFont(new Font("微软雅黑", Font.PLAIN, 16));
-        searchPanel.add(downloadBtn);
+        row2.add(downloadBtn);
 
         JButton pathBtn = new JButton("设置默认保存路径");
         pathBtn.setFont(new Font("微软雅黑", Font.PLAIN, 16));
-        searchPanel.add(pathBtn);
+        row2.add(pathBtn);
 
-        // ======================== 设置服务器地址 ========================
         JButton serverConfigBtn = new JButton("设置服务器地址");
         serverConfigBtn.setFont(new Font("微软雅黑", Font.PLAIN, 16));
-        searchPanel.add(serverConfigBtn);
-        // 中部左右分栏面板
+        row2.add(serverConfigBtn);
+        searchPanel.add(row2);
+
         JSplitPane splitPane = new JSplitPane();
         splitPane.setResizeWeight(0.3);
         splitPane.setOrientation(JSplitPane.HORIZONTAL_SPLIT);
         contentPane.add(splitPane, BorderLayout.CENTER);
-        // 左侧文件列表面板
+
         JPanel leftPanel = new JPanel();
         splitPane.setLeftComponent(leftPanel);
         leftPanel.setLayout(new BorderLayout(0, 0));
@@ -123,24 +137,47 @@ public class DesktopSearchEngine extends JFrame {
         fileList = new JList<>(listModel);
         fileList.setFont(new Font("微软雅黑", Font.PLAIN, 14));
         fileList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        leftPanel.add(new JScrollPane(fileList), BorderLayout.CENTER);
-        // 右侧内容预览面板
+        JScrollPane fileListScrollPane = new JScrollPane(fileList);
+        fileListScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        leftPanel.add(fileListScrollPane, BorderLayout.CENTER);
+
         JPanel rightPanel = new JPanel();
         splitPane.setRightComponent(rightPanel);
         rightPanel.setLayout(new BorderLayout(0, 0));
 
-        JLabel lblNewLabel_2 = new JLabel("文档内容预览");
-        lblNewLabel_2.setFont(new Font("微软雅黑", Font.PLAIN, 16));
-        lblNewLabel_2.setBorder(new EmptyBorder(5, 5, 5, 5));
-        rightPanel.add(lblNewLabel_2, BorderLayout.NORTH);
+        JLabel previewLabel = new JLabel("文档内容预览");
+        previewLabel.setFont(new Font("微软雅黑", Font.PLAIN, 16));
+        previewLabel.setBorder(new EmptyBorder(5, 5, 5, 5));
+        rightPanel.add(previewLabel, BorderLayout.NORTH);
 
         resultTextPane = new JTextPane();
         resultTextPane.setFont(new Font("微软雅黑", Font.PLAIN, 14));
         resultTextPane.setEditable(false);
         resultTextPane.setEditorKit(new HTMLEditorKit());
-        rightPanel.add(new JScrollPane(resultTextPane), BorderLayout.CENTER);
+        JScrollPane previewScrollPane = new JScrollPane(resultTextPane);
+        previewScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        rightPanel.add(previewScrollPane, BorderLayout.CENTER);
 
-        // 搜索事件
+        JPanel ragPanel = new JPanel();
+        ragPanel.setLayout(new BorderLayout(0, 0));
+        ragPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
+        ragPanel.setPreferredSize(new Dimension(1280, 260));
+
+        JLabel ragLabel = new JLabel("AI总结回答");
+        ragLabel.setFont(new Font("微软雅黑", Font.PLAIN, 16));
+        ragPanel.add(ragLabel, BorderLayout.NORTH);
+
+        ragTextPane = new JTextPane();
+        ragTextPane.setFont(new Font("微软雅黑", Font.PLAIN, 14));
+        ragTextPane.setEditable(false);
+        JScrollPane ragScrollPane = new JScrollPane(ragTextPane);
+        ragScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        ragScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        ragPanel.add(ragScrollPane, BorderLayout.CENTER);
+        contentPane.add(ragPanel, BorderLayout.SOUTH);
+
+        searchTextField.addActionListener(e -> searchBtn.doClick());
+
         searchBtn.addActionListener(e -> {
             if (!isServerOnline) {
                 JOptionPane.showMessageDialog(null, "服务器已下线，无法进行检索！", "错误", JOptionPane.ERROR_MESSAGE);
@@ -153,25 +190,68 @@ public class DesktopSearchEngine extends JFrame {
             }
             listModel.clear();
             resultTextPane.setText("");
+            ragTextPane.setText("");
             fileContentMap.clear();
 
-            JSONArray searchResult = HttpUtil.search(keyword);
-            if (searchResult.size() == 0) {
-                JOptionPane.showMessageDialog(null, "服务端未检索到相关文件！", "提示", JOptionPane.INFORMATION_MESSAGE);
-                return;
-            }
-            for (int i = 0; i < searchResult.size(); i++) {
-                JSONObject obj = searchResult.getJSONObject(i);
-                String fileName = obj.getString("fileName");
-                String summary = obj.getString("summary");
-                String highlightSummary = HttpUtil.highlightKeyword(summary, keyword);
-                listModel.addElement(fileName);
-                fileContentMap.put(fileName, highlightSummary);
-            }
-            JOptionPane.showMessageDialog(null, "检索完成，共找到 " + searchResult.size() + " 个文件！", "成功", JOptionPane.INFORMATION_MESSAGE);
+            boolean useAiSearch = aiSearchCheckBox.isSelected();
+            boolean needRag = ragAnswerCheckBox.isSelected();
+
+            new Thread(() -> {
+                try {
+                    JSONArray searchResult;
+                    if (useAiSearch) {
+                        searchResult = HttpUtil.search(keyword, true, needRag);
+                    } else {
+                        searchResult = HttpUtil.search(keyword);
+                    }
+
+                    SwingUtilities.invokeLater(() -> {
+                        if (searchResult.size() == 0) {
+                            JOptionPane.showMessageDialog(null, "服务端未检索到相关文件！", "提示", JOptionPane.INFORMATION_MESSAGE);
+                            return;
+                        }
+
+                        if (useAiSearch) {
+                            JSONObject resultObj = searchResult.getJSONObject(0);
+                            JSONArray docResults = resultObj.getJSONArray("searchResults");
+                            String ragAnswer = resultObj.getString("ragAnswer");
+
+                            for (int i = 0; i < docResults.size(); i++) {
+                                JSONObject obj = docResults.getJSONObject(i);
+                                String fileName = obj.getString("fileName");
+                                String summary = obj.getString("summary");
+                                String highlightSummary = HttpUtil.highlightKeyword(summary, keyword);
+                                listModel.addElement(fileName);
+                                fileContentMap.put(fileName, highlightSummary);
+                            }
+
+                            if (needRag) {
+                                ragTextPane.setText(ragAnswer);
+                            } else {
+                                ragTextPane.setText("✅ 已启用AI语义模糊搜索，如需生成总结请勾选【生成AI总结】");
+                            }
+                            JOptionPane.showMessageDialog(null, "AI模糊检索完成，共找到 " + docResults.size() + " 个相关文件", "检索成功", JOptionPane.INFORMATION_MESSAGE);
+                        } else {
+                            for (int i = 0; i < searchResult.size(); i++) {
+                                JSONObject obj = searchResult.getJSONObject(i);
+                                String fileName = obj.getString("fileName");
+                                String summary = obj.getString("summary");
+                                // 调用修复后的高亮方法，自动标红核心关键词
+                                String highlightSummary = HttpUtil.highlightKeyword(summary, keyword);
+                                listModel.addElement(fileName);
+                                fileContentMap.put(fileName, highlightSummary);
+                            }
+                            JOptionPane.showMessageDialog(null, "关键词精准检索完成，共找到 " + searchResult.size() + " 个相关文件", "检索成功", JOptionPane.INFORMATION_MESSAGE);
+                        }
+                    });
+                } catch (Exception ex) {
+                    SwingUtilities.invokeLater(() -> {
+                        JOptionPane.showMessageDialog(null, "检索失败：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+                    });
+                }
+            }).start();
         });
 
-        // 文件列表点击事件
         fileList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 String selectedFileName = fileList.getSelectedValue();
@@ -181,7 +261,6 @@ public class DesktopSearchEngine extends JFrame {
             }
         });
 
-        // 设置默认保存路径事件
         pathBtn.addActionListener(e -> {
             JFileChooser fileChooser = new JFileChooser();
             fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
@@ -193,7 +272,6 @@ public class DesktopSearchEngine extends JFrame {
             }
         });
 
-        // 下载事件  ★★★★★ 只改这里，只加代码，其余全部原版 ★★★★★
         downloadBtn.addActionListener(e -> {
             if (!isServerOnline) {
                 JOptionPane.showMessageDialog(null, "服务器已下线，无法下载文件！", "错误", JOptionPane.ERROR_MESSAGE);
@@ -215,8 +293,6 @@ public class DesktopSearchEngine extends JFrame {
             }
             String saveDir = fileChooser.getSelectedFile().getAbsolutePath();
 
-            // ======================== 【新增的唯一代码，原版没有的，恢复你的功能】 ========================
-            // 检测目标路径是否存在同名文件，和Windows系统一致的提示逻辑
             File targetFile = new File(saveDir, selectedFileName);
             if (targetFile.exists()) {
                 int confirm = JOptionPane.showConfirmDialog(
@@ -227,10 +303,9 @@ public class DesktopSearchEngine extends JFrame {
                         JOptionPane.WARNING_MESSAGE
                 );
                 if (confirm != JOptionPane.YES_OPTION) {
-                    return; // 点击取消，终止下载，不执行后续操作
+                    return;
                 }
             }
-            // ==========================================================================================
 
             boolean isSuccess = HttpUtil.downloadFile(selectedFileName, saveDir);
             if (isSuccess) {
@@ -240,14 +315,12 @@ public class DesktopSearchEngine extends JFrame {
             }
         });
 
-        // ======================== 设置服务器地址按钮点击事件 ========================
         serverConfigBtn.addActionListener(e -> {
             showServerConfigDialog();
         });
 
     }
 
-    // ======================== 加载服务器配置文件 ========================
     private void loadServerConfig() {
         File configFile = new File(CONFIG_FILE);
         if (configFile.exists()) {
@@ -264,7 +337,6 @@ public class DesktopSearchEngine extends JFrame {
         }
     }
 
-    // ======================== 保存服务器配置到文件 ========================
     private void saveServerConfig(String serverUrl) {
         try (OutputStream out = new FileOutputStream(CONFIG_FILE)) {
             Properties props = new Properties();
@@ -276,9 +348,7 @@ public class DesktopSearchEngine extends JFrame {
         }
     }
 
-    // ======================== 服务器地址配置弹窗 ========================
     private void showServerConfigDialog() {
-        // 创建输入框，默认填充当前的服务器地址
         JTextField serverUrlField = new JTextField(HttpUtil.SERVER_URL, 40);
         serverUrlField.setFont(new Font("微软雅黑", Font.PLAIN, 16));
         JPanel panel = new JPanel();
@@ -290,22 +360,18 @@ public class DesktopSearchEngine extends JFrame {
         int result = JOptionPane.showConfirmDialog(null, panel, "设置服务器地址", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (result == JOptionPane.OK_OPTION) {
             String newServerUrl = serverUrlField.getText().trim();
-            // 简单校验格式：必须以http://开头，包含:端口号
             if (!newServerUrl.startsWith("http://") || !newServerUrl.contains(":")) {
                 JOptionPane.showMessageDialog(null, "服务器地址格式错误！\n正确格式示例：http://192.168.1.100:8080", "错误", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            // 更新地址+保存配置+刷新状态
             HttpUtil.updateServerUrl(newServerUrl);
             saveServerConfig(newServerUrl);
-            // 立刻检测服务器状态，刷新红绿灯
             checkServerOnlineStatus();
             updateServerStatusUI();
             JOptionPane.showMessageDialog(null, "服务器地址设置成功！\n当前地址：" + newServerUrl, "成功", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
-    // 初始化状态检测定时器
     private void initStatusCheckTimer() {
         statusCheckTimer = new Timer(true);
         statusCheckTimer.scheduleAtFixedRate(new TimerTask() {
@@ -317,7 +383,6 @@ public class DesktopSearchEngine extends JFrame {
         }, 0, 5000);
     }
 
-    // 检测服务器状态
     private void checkServerOnlineStatus() {
         try {
             URL url = new URL(HttpUtil.SERVER_URL + "/api/health/check");
@@ -332,7 +397,6 @@ public class DesktopSearchEngine extends JFrame {
         }
     }
 
-    // 更新红绿灯UI
     private void updateServerStatusUI() {
         if (isServerOnline) {
             serverStatusLabel.setIcon(new ImageIcon(createColoredCircle(Color.GREEN)));
@@ -343,7 +407,6 @@ public class DesktopSearchEngine extends JFrame {
         }
     }
 
-    // 绘制红绿灯圆形图标
     private Image createColoredCircle(Color color) {
         int size = 16;
         BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
@@ -355,7 +418,6 @@ public class DesktopSearchEngine extends JFrame {
         return image;
     }
 
-    // 关闭窗口停止定时器
     @Override
     protected void processWindowEvent(java.awt.event.WindowEvent e) {
         super.processWindowEvent(e);

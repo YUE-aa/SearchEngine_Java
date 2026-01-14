@@ -1,43 +1,73 @@
 package jmu.net.search.controller;
 
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import jmu.net.search.dto.SearchResultDTO;
+import jmu.net.search.service.LuceneSearchService;
 import jmu.net.search.util.LogUtils;
-import jmu.net.search.util.LuceneUtil;
 import jmu.net.search.vo.ResultVo;
 import org.apache.lucene.document.Document;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @RestController
 public class SearchController {
+    @Resource
+    private LuceneSearchService luceneSearchService;
 
     @GetMapping("/api/search")
-    public ResultVo search(@RequestParam("keyword") String keyword, HttpServletRequest request) {
+    public ResultVo search(
+            @RequestParam("keyword") String keyword,
+            @RequestParam(value = "useAI", defaultValue = "false") boolean useAI,
+            @RequestParam(value = "needRag", defaultValue = "false") boolean needRag,
+            HttpServletRequest request) {
         String clientIp = LogUtils.getClientIp(request);
         String trimKeyword = keyword.trim();
-
         try {
-            // 执行检索逻辑
-            List<Document> documents = LuceneUtil.search(trimKeyword);
+            // 纯Lucene搜索
+            if (!useAI) {
+                List<Document> documents = luceneSearchService.pureLuceneSearch(trimKeyword);
+                List<SearchResultDTO> resultList = documents.stream().map(doc -> {
+                    String fileName = doc.get("fileName");
+                    String content = doc.get("content");
+                    String summary = luceneSearchService.getSummary(content, trimKeyword);
+                    return new SearchResultDTO(fileName, summary);
+                }).collect(Collectors.toList());
+                LogUtils.writeLog(clientIp, "检索文件（纯Lucene）", "关键词：" + trimKeyword + " | 匹配数：" + resultList.size());
+                return ResultVo.success("纯Lucene检索成功", new JSONArray(resultList));
+            }
+
+            // AI混合搜索
+            String optimizedKeyword = luceneSearchService.optimizeQuery(trimKeyword);
+            LogUtils.writeLog(clientIp, "检索文件（AI混合）", "原始关键词：" + trimKeyword + " | 优化后：" + optimizedKeyword);
+            List<Document> documents = luceneSearchService.hybridSearch(optimizedKeyword, true);
             List<SearchResultDTO> resultList = documents.stream().map(doc -> {
                 String fileName = doc.get("fileName");
                 String content = doc.get("content");
-                return new SearchResultDTO(fileName, content);
+                String summary = luceneSearchService.getSummary(content, optimizedKeyword);
+                return new SearchResultDTO(fileName, summary);
             }).collect(Collectors.toList());
 
-            // ✅ 核心优化：合并成1条日志，记录完整信息
-            String logContent = "检索关键词：" + trimKeyword + " | 匹配文档数：" + resultList.size();
-            LogUtils.writeLog(clientIp, "检索文件", logContent);
+            String ragAnswer = "";
+            if (needRag && !documents.isEmpty()) {
+                ragAnswer = luceneSearchService.generateRagAnswer(trimKeyword, documents);
+            }
 
-            return ResultVo.success("检索成功", resultList);
+            JSONObject resultData = new JSONObject();
+            resultData.put("searchResults", resultList);
+            resultData.put("ragAnswer", ragAnswer);
+            resultData.put("optimizedKeyword", optimizedKeyword);
+            LogUtils.writeLog(clientIp, "检索成功（AI混合）", "关键词：" + optimizedKeyword + " | 匹配数：" + resultList.size());
+            return ResultVo.success("AI混合检索成功", resultData);
         } catch (Exception e) {
-            // 异常日志也保留，方便排查问题
-            String errorLog = "检索关键词：" + trimKeyword + " | 异常原因：" + e.getMessage();
-            LogUtils.writeLog(clientIp, "异常信息", errorLog);
+            String errorLog = "关键词：" + trimKeyword + " | 异常：" + e.getMessage();
+            LogUtils.writeLog(clientIp, "检索异常", errorLog);
             return ResultVo.error("检索失败：" + e.getMessage());
         }
     }
